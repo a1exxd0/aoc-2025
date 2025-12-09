@@ -4,145 +4,165 @@ use ordered_float::OrderedFloat;
 
 advent_of_code::solution!(8);
 
-fn to_distances(input: &str) -> Option<(Vec<(u64, u64, u64)>, Vec<Vec<f64>>)> {
-    let nodes = input
+fn parse_nodes(input: &str) -> Vec<(i64, i64, i64)> {
+    input
         .lines()
         .map(|line| {
             let mut elem = line.split(',');
             match (elem.next(), elem.next(), elem.next()) {
                 (Some(x), Some(y), Some(z)) => (
-                    x.parse::<u64>().unwrap(),
-                    y.parse::<u64>().unwrap(),
-                    z.parse::<u64>().unwrap(),
+                    x.parse::<i64>().unwrap(),
+                    y.parse::<i64>().unwrap(),
+                    z.parse::<i64>().unwrap(),
                 ),
                 _ => panic!("bad parse case"),
             }
         })
-        .collect::<Vec<_>>();
+        .collect()
+}
 
+#[inline]
+fn dist_squared(a: &(i64, i64, i64), b: &(i64, i64, i64)) -> i64 {
+    (a.0 - b.0).pow(2) + (a.1 - b.1).pow(2) + (a.2 - b.2).pow(2)
+}
+
+fn build_edges(nodes: &[(i64, i64, i64)]) -> Vec<(i64, usize, usize)> {
     let n = nodes.len();
-    let mut distances = vec![vec![f64::MAX; n]; n];
+    let mut edges = Vec::with_capacity(n * (n - 1) / 2);
+
     for i in 0..n - 1 {
         for j in i + 1..n {
-            distances[i][j] = ((nodes[i].0 as f64 - nodes[j].0 as f64).powi(2)
-                + (nodes[i].1 as f64 - nodes[j].1 as f64).powi(2)
-                + (nodes[i].2 as f64 - nodes[j].2 as f64).powi(2))
-            .sqrt();
+            edges.push((dist_squared(&nodes[i], &nodes[j]), i, j));
         }
     }
 
-    Some((nodes, distances))
+    edges.sort_unstable_by_key(|e| e.0);
+    edges
 }
 
 struct UnionFind {
     parent: Vec<usize>,
+    rank: Vec<usize>,
+    components: usize,
 }
 
 impl UnionFind {
-    pub fn with_size(n: usize) -> UnionFind {
-        let mut uf = UnionFind { parent: vec![0; n] };
-        for i in 0..n {
-            uf.parent[i] = i;
-        }
-
-        uf
-    }
-
-    pub fn find(&self, i: usize) -> usize {
-        if self.parent[i] == i {
-            return i;
-        } else {
-            return self.find(self.parent[i]);
+    pub fn new(n: usize) -> Self {
+        Self {
+            parent: (0..n).collect(),
+            rank: vec![0; n],
+            components: n,
         }
     }
 
-    pub fn union(&mut self, i: usize, j: usize) {
+    pub fn find(&mut self, mut i: usize) -> usize {
+        let mut root = i;
+        while self.parent[root] != root {
+            root = self.parent[root];
+        }
+        while self.parent[i] != root {
+            let next = self.parent[i];
+            self.parent[i] = root;
+            i = next;
+        }
+        root
+    }
+
+    pub fn union(&mut self, i: usize, j: usize) -> bool {
         let irep = self.find(i);
         let jrep = self.find(j);
 
-        self.parent[irep] = jrep;
-    }
-
-    pub fn one_connected_component(&self) -> bool {
-        let n = self.parent.len();
-        let first_parent = self.find(0);
-
-        for i in 1..n {
-            if self.find(i) != first_parent {
-                return false;
-            }
+        if irep == jrep {
+            return false;
         }
 
+        if self.rank[irep] < self.rank[jrep] {
+            self.parent[irep] = jrep;
+        } else if self.rank[irep] > self.rank[jrep] {
+            self.parent[jrep] = irep;
+        } else {
+            self.parent[jrep] = irep;
+            self.rank[irep] += 1;
+        }
+
+        self.components -= 1;
         true
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.components == 1
     }
 }
 
 pub fn part_one(input: &str) -> Option<u64> {
-    let (nodes, distances) = to_distances(input)?;
+    let nodes = parse_nodes(input);
     let n = nodes.len();
-    let mut active = vec![false; n];
+    let edges = build_edges(&nodes);
 
-    let mut best_distances = BTreeSet::<(OrderedFloat<f64>, usize, usize)>::new();
-    distances.iter().enumerate().for_each(|(i, elem)| {
-        elem.iter().enumerate().for_each(|(j, d)| {
-            best_distances.insert((OrderedFloat(*d), i, j));
-        })
-    });
-
-    let mut uf = UnionFind::with_size(n);
     let iters = if n < 1000 { 10 } else { 1000 };
-    for _ in 0..iters {
-        let best_dist = best_distances.pop_first().unwrap();
-        uf.union(best_dist.1, best_dist.2);
-        active[best_dist.1] = true;
-        active[best_dist.2] = true;
-    }
 
-    let mut dju = HashMap::<usize, u64>::new();
-    for i in 0..n {
-        if !active[i] {
-            continue;
+    let mut uf = UnionFind::new(n);
+    let mut component_sizes: Vec<usize> = vec![1; n];
+    let mut edges_added = 0;
+
+    for (_, i, j) in edges.iter() {
+        if edges_added >= iters {
+            break;
         }
 
-        let parent = uf.find(i);
-        *dju.entry(parent).or_insert(0) += 1;
+        let irep = uf.find(*i);
+        let jrep = uf.find(*j);
+
+        if irep != jrep {
+            let new_size = component_sizes[irep] + component_sizes[jrep];
+            uf.union(*i, *j);
+            let new_rep = uf.find(*i);
+            component_sizes[new_rep] = new_size;
+        }
+
+        edges_added += 1;
     }
 
-    let mut circuit_sizes = dju.values().cloned().collect::<Vec<_>>();
-    circuit_sizes.sort();
-    circuit_sizes.reverse();
+    let mut active = vec![false; n];
+    for (_, i, j) in edges.iter().take(iters) {
+        active[*i] = true;
+        active[*j] = true;
+    }
 
-    circuit_sizes
-        .iter()
-        .take(3)
-        .fold(1, |acc, x| acc * x)
-        .into()
+    let mut seen_roots = std::collections::HashSet::new();
+    let mut sizes = Vec::new();
+
+    for i in 0..n {
+        if active[i] {
+            let root = uf.find(i);
+            if seen_roots.insert(root) {
+                sizes.push(component_sizes[root] as u64);
+            }
+        }
+    }
+
+    sizes.sort_unstable_by(|a, b| b.cmp(a));
+    Some(sizes.iter().take(3).product())
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
-    let (nodes, distances) = to_distances(input)?;
-    let n = nodes.len();
-    let mut active = vec![false; n];
+    let nodes = parse_nodes(input);
+    let edges = build_edges(&nodes);
 
-    let mut best_distances = BTreeSet::<(OrderedFloat<f64>, usize, usize)>::new();
-    distances.iter().enumerate().for_each(|(i, elem)| {
-        elem.iter().enumerate().for_each(|(j, d)| {
-            best_distances.insert((OrderedFloat(*d), i, j));
-        })
-    });
+    let mut uf = UnionFind::new(nodes.len());
+    let mut last_pair = (0, 0);
 
-    let mut uf = UnionFind::with_size(n);
-    let mut last_pair = None;
-    while !uf.one_connected_component() {
-        let best_dist = best_distances.pop_first().unwrap();
-        uf.union(best_dist.1, best_dist.2);
-        active[best_dist.1] = true;
-        active[best_dist.2] = true;
-        last_pair = Some(best_dist);
+    for (_, i, j) in edges {
+        if uf.union(i, j) {
+            last_pair = (i, j);
+            if uf.is_connected() {
+                break;
+            }
+        }
     }
 
-    let (_, n1, n2) = last_pair.unwrap();
-    Some(nodes[n1].0 * nodes[n2].0)
+    let (n1, n2) = last_pair;
+    Some((nodes[n1].0 * nodes[n2].0) as u64)
 }
 
 #[cfg(test)]
