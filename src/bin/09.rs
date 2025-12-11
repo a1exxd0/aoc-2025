@@ -120,53 +120,6 @@ fn flood_fill(board: &mut Vec<Vec<Piece>>) -> () {
     }
 }
 
-fn to_board(tiles: &mut Vec<(u64, u64)>) -> Vec<Vec<Piece>> {
-    let lb_x = tiles.iter().min_by_key(|tile| tile.0).unwrap().0;
-    let lb_y = tiles.iter().min_by_key(|tile| tile.1).unwrap().1;
-    let ub_x = tiles.iter().max_by_key(|tile| tile.0).unwrap().0;
-    let ub_y = tiles.iter().max_by_key(|tile| tile.1).unwrap().1;
-
-    for tile in &mut *tiles {
-        tile.0 -= lb_x;
-        tile.1 -= lb_y;
-    }
-
-    let mut board =
-        vec![vec![Piece::Empty; (ub_y + 1 - lb_y) as usize]; (ub_x + 1 - lb_x) as usize];
-
-    let set_edges = |board: &mut Vec<Vec<Piece>>, t1: (u64, u64), t2: (u64, u64)| {
-        if t1.0 == t2.0 {
-            let (lb, ub) = (t1.1.min(t2.1), t1.1.max(t2.1));
-            for i in lb..=ub {
-                board[t1.0 as usize][i as usize] = Piece::Edge;
-            }
-        } else {
-            let (lb, ub) = (t1.0.min(t2.0), t1.0.max(t2.0));
-            for i in lb..=ub {
-                board[i as usize][t1.1 as usize] = Piece::Edge;
-            }
-        }
-    };
-
-    for pair_tile in tiles.windows(2) {
-        let t1 = pair_tile[0];
-        let t2 = pair_tile[1];
-
-        set_edges(&mut board, t1, t2);
-    }
-
-    {
-        let (t1, t2) = (tiles[tiles.len() - 1], tiles[0]);
-        set_edges(&mut board, t1, t2);
-    }
-
-    for corner in tiles {
-        board[corner.0 as usize][corner.1 as usize] = Piece::Corner;
-    }
-
-    board
-}
-
 struct CompressedBoard {
     xs: Vec<u64>,
     ys: Vec<u64>,

@@ -1,7 +1,5 @@
 use std::collections::{BTreeSet, HashMap};
 
-use ordered_float::OrderedFloat;
-
 advent_of_code::solution!(8);
 
 fn parse_nodes(input: &str) -> Vec<(i64, i64, i64)> {
